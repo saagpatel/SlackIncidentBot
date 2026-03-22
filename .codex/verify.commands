@@ -1,2 +1,6 @@
 # codex-os-managed
 test -f .codex/codex-os.manifest.json
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --lib
+cargo build --release
