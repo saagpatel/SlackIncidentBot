@@ -5,6 +5,10 @@
 # ── Stage 1: Build Dependencies ──
 FROM rust:1.88-slim as planner
 WORKDIR /app
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 RUN cargo install cargo-chef --locked
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
@@ -12,6 +16,10 @@ RUN cargo chef prepare --recipe-path recipe.json
 # ── Stage 2: Build Cached Dependencies ──
 FROM rust:1.88-slim as cacher
 WORKDIR /app
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 RUN cargo install cargo-chef --locked
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
