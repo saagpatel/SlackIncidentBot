@@ -3,21 +3,21 @@
 # ══════════════════════════════════════════════════════════
 
 # ── Stage 1: Build Dependencies ──
-FROM rust:1.75-slim as planner
+FROM rust:1.85-slim as planner
 WORKDIR /app
 RUN cargo install cargo-chef
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 # ── Stage 2: Build Cached Dependencies ──
-FROM rust:1.75-slim as cacher
+FROM rust:1.85-slim as cacher
 WORKDIR /app
 RUN cargo install cargo-chef
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
 # ── Stage 3: Build Application ──
-FROM rust:1.75-slim as builder
+FROM rust:1.85-slim as builder
 WORKDIR /app
 
 # Install build dependencies
