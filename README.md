@@ -1,353 +1,73 @@
-# Slack Incident Bot
+# SlackIncidentBot
 
-A production-ready Slack bot for orchestrating incident lifecycle management, built in Rust.
+[![Rust](https://img.shields.io/badge/Rust-%23dea584?style=flat-square&logo=rust)](#) [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](#)
+
+> Declare, escalate, resolve, and post-mortem — a complete incident lifecycle in Slack, built in Rust and deployable in minutes.
+
+SlackIncidentBot orchestrates the full incident lifecycle from a single Slack slash command. Declare a P1 and it creates a dedicated channel, alerts the right people, posts to Statuspage, and starts the timeline. Resolve it and the bot computes duration, triggers a post-mortem template, and logs everything to PostgreSQL with compile-time query validation.
 
 ## Features
 
-✅ **Complete Incident Lifecycle**
-- Declare incidents with severity levels (P1-P4)
-- Automatic channel creation and team notifications
-- Status updates with timeline tracking
-- Severity escalation with re-notifications
-- Incident resolution with duration tracking
-- Post-mortem generation
-
-✅ **Intelligent Notifications**
-- P1: Broadcast to #general + DM executives
-- P2: Post to #engineering
-- P3/P4: Channel-only notifications
-- Duplicate notification throttling (5-minute window)
-
-✅ **Statuspage Integration**
-- Automatic component status updates
-- Severity-aware status mapping
-- Async job queue for reliability
-- Graceful degradation if unavailable
-
-✅ **Production Ready**
-- Slack signature verification
-- Commander-only permissions for critical operations
-- PostgreSQL with compile-time query validation
-- Comprehensive error handling
-- Full audit trail
+- **Full Lifecycle Management** — Declare (P1–P4), update status, escalate severity, resolve, and generate post-mortems from Slack
+- **Intelligent Notifications** — P1 broadcasts to `#general` and DMs executives; P2 posts to `#engineering`; P3/P4 stay channel-local; duplicate throttling (5-minute window) prevents alert storms
+- **Statuspage Integration** — Automatic component status updates on incident declare and resolve; severity-aware status mapping; graceful degradation if Statuspage is unavailable
+- **Compile-Time Query Validation** — SQLx with PostgreSQL validates queries at compile time — schema drift is a build error, not a runtime surprise
+- **Commander Permissions** — Critical operations (escalation, resolution) are gated to the incident commander role
+- **Full Audit Trail** — Every state transition, notification, and status change is persisted to PostgreSQL with timestamps
 
 ## Quick Start
 
 ### Prerequisites
 
-- Rust 1.70+ ([install rustup](https://rustup.rs/))
+- Rust 1.70+ ([rustup](https://rustup.rs/))
 - PostgreSQL 16+
-- Slack workspace with admin access
+- Slack workspace with admin access (to create a Slack app)
 
 ### Installation
 
 ```bash
-# 1. Clone and navigate to project
-cd /path/to/SlackIncidentBot
-
-# 2. Start PostgreSQL
-docker compose up -d
-
-# 3. Configure environment
+git clone https://github.com/saagpatel/SlackIncidentBot.git
+cd SlackIncidentBot
 cp .env.example .env
-# Edit .env with your Slack credentials (see CONFIGURATION.md)
-
-# 4. Run migrations
-cargo install sqlx-cli --no-default-features --features postgres
-sqlx migrate run
-
-# 5. Build and run
-cargo run --release
-
-# 6. Verify health
-curl http://localhost:3000/health
+# Fill in SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, DATABASE_URL, etc.
 ```
 
-### Slack App Setup
-
-See [SLACK_SETUP.md](./SLACK_SETUP.md) for detailed Slack app configuration.
-
-**Quick version:**
-1. Create app at https://api.slack.com/apps
-2. Add OAuth scopes: `commands`, `channels:manage`, `channels:read`, `chat:write`, `pins:write`, `im:write`, `users:read`
-3. Create slash command `/incident` → `https://your-url/slack/commands`
-4. Enable interactivity → `https://your-url/slack/interactions`
-5. Install to workspace
-6. Copy bot token and signing secret to `.env`
-
-## Usage
-
-### Declaring an Incident
-
-```
-/incident declare
-```
-
-Opens a modal to capture:
-- **Title**: Brief description (e.g., "API Gateway returning 500s")
-- **Severity**: P1 (Critical) through P4 (Low)
-- **Service**: Affected service from configured list
-- **Commander**: Incident commander (defaults to you)
-
-Creates:
-- Dedicated incident channel (`inc-YYYYMMDD-service-name`)
-- Pinned incident details
-- Timeline entry
-- Severity-based notifications
-
-### Managing an Incident
-
-All commands must be run in the incident channel:
+### Run database migrations
 
 ```bash
-# Update status
-/incident status Identified root cause in load balancer config
-
-# Change severity (triggers re-notifications if escalating to P1/P2)
-/incident severity P1 Database is completely down
-
-# View timeline
-/incident timeline
-
-# Mark resolved
-/incident resolved
-
-# Generate post-mortem template
-/incident postmortem
+cargo sqlx migrate run
 ```
 
-### Permissions
+### Run (development)
 
-- **Anyone** can declare incidents
-- **Commander only** can:
-  - Post status updates
-  - Change severity
-  - Resolve incidents
-  - Generate post-mortems
+```bash
+cargo run
+```
+
+### Docker
+
+```bash
+docker-compose up
+```
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Language | Rust (edition 2021) |
+| HTTP server | Axum 0.8 |
+| Async runtime | Tokio |
+| Database | PostgreSQL 16 + SQLx 0.8 |
+| Slack API | Reqwest (raw HTTP) |
+| Statuspage | Reqwest (async job queue) |
+| Logging | Tracing + tracing-subscriber (JSON) |
+| Config | config + dotenvy |
+| Deployment | Docker + Fly.io |
 
 ## Architecture
 
-### Tech Stack
-
-- **Runtime**: Rust + Tokio async runtime
-- **Web Framework**: Axum
-- **Database**: PostgreSQL with sqlx (compile-time query checking)
-- **Slack API**: Custom reqwest-based client (no SDK dependencies)
-- **Job Queue**: In-process tokio::mpsc channels
-
-### Key Design Decisions
-
-1. **No Slack SDK** - Built on raw HTTP + typed structs for full control and maintainability
-2. **Ack-then-Process** - Return 200 OK immediately, spawn async tasks for 3-second compliance
-3. **State Machine** - Explicit state transitions: Declared → Investigating → Identified → Monitoring → Resolved
-4. **Best-Effort External APIs** - Statuspage sync failures logged but don't block incident workflow
-5. **In-Process Queue** - Simple tokio channels for MVP (can swap for Redis later)
-
-### Project Structure
-
-```
-src/
-├── main.rs                  # Server, routes, startup
-├── app_state.rs             # Shared state (DB pool, Slack client, config)
-├── config.rs                # Environment variable configuration
-├── error.rs                 # Custom error types with Axum integration
-│
-├── commands/                # Slash command handlers
-│   ├── declare.rs           # /incident declare
-│   ├── status.rs            # /incident status
-│   ├── severity.rs          # /incident severity
-│   ├── resolved.rs          # /incident resolved
-│   ├── timeline.rs          # /incident timeline
-│   └── postmortem.rs        # /incident postmortem
-│
-├── services/                # Business logic layer
-│   ├── incident.rs          # State machine, CRUD operations
-│   ├── notification.rs      # Severity-based routing
-│   ├── timeline.rs          # Timeline event tracking
-│   ├── postmortem.rs        # Template generation
-│   └── audit.rs             # Audit logging
-│
-├── slack/                   # Slack API integration
-│   ├── client.rs            # HTTP client wrapper
-│   ├── verification.rs      # HMAC-SHA256 signature verification
-│   ├── events.rs            # Request parsing
-│   ├── blocks.rs            # Block Kit message builders
-│   └── modals.rs            # Modal definitions
-│
-├── db/                      # Data layer
-│   ├── mod.rs               # Pool setup, migrations
-│   ├── models.rs            # Rust types (Incident, Severity, etc.)
-│   └── queries/             # Database query functions
-│
-├── adapters/                # External API integrations
-│   └── statuspage.rs        # Statuspage.io client
-│
-├── jobs/                    # Async background jobs
-│   ├── mod.rs               # Job enum
-│   ├── worker.rs            # Background worker
-│   └── statuspage_sync.rs   # Statuspage sync job
-│
-└── utils/                   # Shared utilities
-    └── channel.rs           # Channel naming logic
-```
-
-## Database Schema
-
-See `migrations/20260215000001_initial_schema.sql` for full schema.
-
-**Core tables:**
-- `incidents` - Incident metadata and current state
-- `incident_timeline` - Immutable event log
-- `incident_notifications` - Notification delivery audit
-- `statuspage_mappings` - Service → Statuspage component mapping
-- `audit_log` - Every command and state change
-
-## Development
-
-```bash
-# Normal dev run (persists build artifacts in ./target)
-make run
-
-# Lean dev run (temporary build artifacts, auto-removed on exit)
-make lean-dev
-
-# Run tests
-cargo test
-
-# Format code
-cargo fmt
-
-# Lint
-cargo clippy
-
-# Watch mode (requires cargo-watch)
-cargo install cargo-watch
-cargo watch -x run
-
-# Database migrations
-sqlx migrate add <name>
-sqlx migrate run
-
-# Cleanup only heavy build artifacts
-make clean-heavy
-
-# Cleanup all reproducible local artifacts/caches
-make clean-full-local
-
-# Inspect common heavy paths
-make size-report
-```
-
-### Normal dev vs lean dev
-
-- `make run`: fastest repeat startup because Rust build artifacts remain in `target/`, but disk usage grows.
-- `make lean-dev`: uses a temporary `CARGO_TARGET_DIR` under `${TMPDIR:-/tmp}/incident-bot-lean`, keeps dependency caches in `~/.cargo`, and automatically deletes the temporary build artifacts when the process exits.
-- `make clean-heavy`: removes only heavy local build artifacts (`target/` and lean temp directories).
-- `make clean-full-local`: removes all reproducible project-local artifacts (`target/`, `.sqlx`, and lean temp directories) and runs `cargo clean`.
-- Script equivalents:
-  - `./scripts/clean-heavy.sh`
-  - `./scripts/clean-full-local.sh`
-
-## Deployment
-
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for production deployment guide.
-
-**Docker:**
-```bash
-docker build -t incident-bot .
-docker run -p 3000:3000 --env-file .env incident-bot
-```
-
-**Health checks:**
-- `GET /health` - Returns "OK" if database is reachable
-
-## Configuration
-
-See [CONFIGURATION.md](./CONFIGURATION.md) for complete environment variable reference.
-
-**Required variables:**
-```bash
-DATABASE_URL=postgres://user:pass@localhost/db
-SLACK_BOT_TOKEN=xoxb-...
-SLACK_SIGNING_SECRET=...
-SERVICES=service1,service2,service3
-```
-
-**Optional but recommended:**
-```bash
-SERVICE_OWNERS={"service1":["U024USER1"]}
-NOTIFICATION_CHANNEL_GENERAL=C024CHANNEL
-NOTIFICATION_CHANNEL_ENGINEERING=C024CHANNEL
-P1_USERS=U024USER1,U024USER2
-```
-
-## Testing
-
-18/18 unit tests passing. See [TESTING.md](./TESTING.md) for test coverage.
-
-```bash
-# Run all tests
-cargo test
-
-# Run unit tests only
-cargo test --lib
-
-# Run integration tests (requires database)
-cargo test --test '*'
-```
-
-## Statuspage Integration
-
-Optional integration with Statuspage.io for public status page updates.
-
-**Setup:**
-1. Add API credentials to `.env`:
-   ```bash
-   STATUSPAGE_API_KEY=your-oauth-token
-   STATUSPAGE_PAGE_ID=your-page-id
-   ```
-
-2. Map services to components:
-   ```sql
-   INSERT INTO statuspage_mappings (service_name, component_id)
-   VALUES ('api-gateway', 'abcd1234');
-   ```
-
-3. Status updates happen automatically on incident state changes
-
-**Status Mapping:**
-- P1 Declared/Investigating → `major_outage`
-- P2 Declared/Investigating → `partial_outage`
-- P1 Identified/Monitoring → `partial_outage`
-- All others → `degraded_performance`
-- Resolved → `operational`
-
-## Troubleshooting
-
-**Bot not responding:**
-- Check `RUST_LOG=incident_bot=debug` for detailed logs
-- Verify Slack signing secret matches
-- Ensure request URL is publicly accessible (use ngrok for local dev)
-
-**Database connection errors:**
-- Verify PostgreSQL is running: `docker compose ps`
-- Check DATABASE_URL format
-- Run migrations: `sqlx migrate run`
-
-**Channel creation fails:**
-- Verify bot has `channels:manage` scope
-- Check bot is installed to workspace
-
-## Contributing
-
-This is an internal tool. For bugs or feature requests, create an issue or submit a PR.
-
-**Development workflow:**
-1. Create feature branch
-2. Write tests
-3. Ensure `cargo test` and `cargo clippy` pass
-4. Submit PR with conventional commits (`feat:`, `fix:`, `docs:`)
+The bot is a single Axum server that receives Slack events and slash commands. Each incoming request is signature-verified against the Slack signing secret before processing. Incident state transitions run through a service layer that writes to PostgreSQL via SQLx. Statuspage updates are enqueued as async background jobs so slow external calls never block the Slack response window. All config is read from environment variables validated at startup.
 
 ## License
 
-Internal company tool - not licensed for external use.
+MIT
