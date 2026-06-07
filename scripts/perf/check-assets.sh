@@ -8,7 +8,10 @@ fail=0
 count=0
 largest_file=""
 largest_size=0
-target_dir=$(sed -n 's/.*target-dir *= *"\([^"]*\)".*/\1/p' .cargo/config.toml | head -n1)
+target_dir=""
+if [[ -f .cargo/config.toml ]]; then
+  target_dir=$(sed -n 's/.*target-dir *= *"\([^"]*\)".*/\1/p' .cargo/config.toml | head -n1)
+fi
 target_dir="${target_dir:-target}"
 binary_path="${target_dir%/}/release/incident-bot"
 
