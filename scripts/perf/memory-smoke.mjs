@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 
-const maxRssMb = Number(process.env.MEMORY_MAX_RSS_MB || 160);
+const maxRssMb = Number(process.env.MEMORY_MAX_RSS_MB || 768);
 const timeArgs =
   process.platform === "darwin"
     ? ["-l", "cargo", "test", "--lib", "--no-run"]

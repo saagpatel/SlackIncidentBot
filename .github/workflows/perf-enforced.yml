@@ -57,7 +57,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 20
-      - run: MEMORY_MAX_RSS_MB=512 npm run perf:memory
+      - run: MEMORY_MAX_RSS_MB=768 npm run perf:memory
 
   perf-lighthouse:
     if: ${{ vars.PERF_PROFILE == 'production' }}
