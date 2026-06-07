@@ -1,6 +1,14 @@
 # codex-os-managed
 test -f .codex/codex-os.manifest.json
+npm run git:guard:all
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --lib
 cargo build --release
+npm run perf:bundle
+npm run perf:build
+npm run perf:assets
+npm run perf:memory
+node scripts/perf/compare-metric.mjs .perf-baselines/bundle.json .perf-results/bundle.json totalBytes 0.08
+node scripts/perf/compare-metric.mjs .perf-baselines/build-time.json .perf-results/build-time.json buildMs 0.15 1000
+PERF_REQUIRED_METRICS=bundle,build,assets,memory PERF_ENFORCE_SUMMARY=1 npm run perf:summary

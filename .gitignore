@@ -4,6 +4,7 @@
 *.pdb
 Cargo.lock
 !/Cargo.lock
+.cargo/
 
 # ── Environment Variables ──
 .env
@@ -77,3 +78,6 @@ lcov.info
 
 # ── Local Audit Workspace ──
 .codex_audit/
+
+# ── Local Performance Runs ──
+.perf-results/
