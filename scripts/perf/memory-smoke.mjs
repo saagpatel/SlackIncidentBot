@@ -2,13 +2,22 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 
 const maxRssMb = Number(process.env.MEMORY_MAX_RSS_MB || 160);
-const result = spawnSync("/usr/bin/time", ["-l", "cargo", "test", "--lib", "--no-run"], {
+const timeArgs =
+  process.platform === "darwin"
+    ? ["-l", "cargo", "test", "--lib", "--no-run"]
+    : ["-v", "cargo", "test", "--lib", "--no-run"];
+const result = spawnSync("/usr/bin/time", timeArgs, {
   encoding: "utf8",
 });
 
 const combined = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-const match = combined.match(/(\d+)\s+maximum resident set size/);
-const rssBytes = match ? Number(match[1]) : null;
+const macRssMatch = combined.match(/(\d+)\s+maximum resident set size/);
+const linuxRssMatch = combined.match(/Maximum resident set size \(kbytes\):\s+(\d+)/);
+const rssBytes = macRssMatch
+  ? Number(macRssMatch[1])
+  : linuxRssMatch
+    ? Number(linuxRssMatch[1]) * 1024
+    : null;
 const rssMb = rssBytes === null ? null : Number((rssBytes / (1024 * 1024)).toFixed(2));
 
 mkdirSync(".perf-results", { recursive: true });
@@ -21,7 +30,7 @@ writeFileSync(
       maxRssMb,
       status: rssMb !== null && rssMb <= maxRssMb ? "pass" : "fail",
       capturedAt: new Date().toISOString(),
-      command: "/usr/bin/time -l cargo test --lib --no-run",
+      command: `/usr/bin/time ${timeArgs.join(" ")}`,
     },
     null,
     2,
