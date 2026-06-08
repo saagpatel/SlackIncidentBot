@@ -1,50 +1,34 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-function nextBundle() {
-  const manifestPath = ".next/build-manifest.json";
-  if (!existsSync(manifestPath)) return null;
-
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  const pages = manifest.pages || {};
-  const pageSizes = {};
-
-  for (const [route, files] of Object.entries(pages)) {
-    let total = 0;
-    for (const file of files) {
-      const full = path.join(".next", file.replace(/^\/?/, ""));
-      try {
-        total += statSync(full).size;
-      } catch {}
-    }
-    pageSizes[route] = total;
-  }
-
-  return {
-    source: "next",
-    totalBytes: Object.values(pageSizes).reduce((a, b) => a + b, 0),
-    pages: pageSizes,
-  };
+function resolveTargetDir() {
+  const cargoConfigPath = ".cargo/config.toml";
+  if (!existsSync(cargoConfigPath)) return "target";
+  const config = readFileSync(cargoConfigPath, "utf8");
+  const match = config.match(/target-dir\s*=\s*"([^"]+)"/);
+  return match?.[1] ?? "target";
 }
 
-function viteBundle() {
-  const distAssets = "dist/assets";
-  if (!existsSync(distAssets)) return null;
-
-  const result = { source: "vite", totalBytes: 0, assets: {} };
-  for (const file of readdirSync(distAssets)) {
-    const full = path.join(distAssets, file);
-    try {
-      const size = statSync(full).size;
-      result.assets[file] = size;
-      result.totalBytes += size;
-    } catch {}
-  }
-  return result;
+function resolveReleaseBinaryName() {
+  const cargoTomlPath = "Cargo.toml";
+  if (!existsSync(cargoTomlPath)) return "incident-bot";
+  const cargoToml = readFileSync(cargoTomlPath, "utf8");
+  const match = cargoToml.match(/release-binary\s*=\s*"([^"]+)"/);
+  return match?.[1] ?? "incident-bot";
 }
 
 const run = async () => {
-  const report = nextBundle() || (await viteBundle()) || { source: "none", totalBytes: 0 };
+  const targetDir = resolveTargetDir();
+  const binaryName = resolveReleaseBinaryName();
+  const binaryPath = path.join(targetDir, "release", binaryName);
+  const report = { source: "cargo-release", totalBytes: 0, assets: {}, binaryPath };
+
+  if (existsSync(binaryPath)) {
+    const size = statSync(binaryPath).size;
+    report.assets[binaryName] = size;
+    report.totalBytes = size;
+  }
+
   mkdirSync(".perf-results", { recursive: true });
   writeFileSync(
     ".perf-results/bundle.json",
